@@ -1,0 +1,1 @@
+A timer I quickly put together. Run main.py to start
