@@ -73,6 +73,15 @@ Adjust volume or run silently:
 /usr/bin/python3 main.py 2m --silent
 ```
 
+Themes:
+
+```bash
+/usr/bin/python3 main.py 2m --theme dark
+/usr/bin/python3 main.py 2m --theme high-contrast
+```
+
+Supported theme values are `auto`, `light`, `dark`, and `high-contrast`. If omitted, `--theme` defaults to `auto` (currently mapped to the light theme).
+
 ## Duration Format
 
 - `2m`
