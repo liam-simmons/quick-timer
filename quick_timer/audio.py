@@ -42,6 +42,11 @@ def _resolve_sound_path(audio_dir, sound_path):
     candidates.append(Path.cwd() / selected_path)
     candidates.append(audio_dir / selected_path)
 
+    test = 2
+    test += 1
+    print(test)
+
+
   for candidate in candidates:
     if candidate.is_file():
       return candidate

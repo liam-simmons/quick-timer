@@ -15,7 +15,7 @@ from .worker import WorkerThread
 
 class MainWindow(Gtk.Window):
   def __init__(self, duration_seconds, audio_dir, sound_path=None, volume=1.0, silent=False):
-    super().__init__(title="Quick Timer")
+    super().__init__(title="ChronoForge")
     self.audio_dir = audio_dir
     self.sound_path = sound_path
     self.volume = volume
@@ -292,7 +292,7 @@ class MainWindow(Gtk.Window):
 
 
 def run_app(duration_seconds, audio_dir, sound_path=None, volume=1.0, silent=False):
-  Notify.init("Quick Timer")
+  Notify.init("ChronoForge")
   window = MainWindow(duration_seconds, audio_dir, sound_path=sound_path, volume=volume, silent=silent)
   window.connect("delete-event", Gtk.main_quit)
   window.initial_show()
