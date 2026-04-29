@@ -13,8 +13,22 @@ from .time_utils import format_remaining_time
 from .worker import WorkerThread
 
 
+DEFAULT_THEME = {
+  "window_bg": "#f4f7fb",
+  "label_fg": "#1f2937",
+  "button_bg": "#ffffff",
+  "button_fg": "#1f2937",
+  "button_border": "#cbd5e1",
+  "circle_bg": (1.0, 1.0, 1.0),
+  "ring_bg": (0.84, 0.88, 0.93),
+  "progress_normal": (0.10, 0.56, 0.95),
+  "progress_warning": (0.93, 0.55, 0.13),
+  "progress_danger": (0.89, 0.20, 0.20),
+}
+
+
 class MainWindow(Gtk.Window):
-  def __init__(self, duration_seconds, audio_dir, sound_path=None, volume=1.0, silent=False):
+  def __init__(self, duration_seconds, audio_dir, sound_path=None, volume=1.0, silent=False, theme=None):
     super().__init__(title="Quick Timer")
     self.audio_dir = audio_dir
     self.sound_path = sound_path
@@ -25,6 +39,7 @@ class MainWindow(Gtk.Window):
     self.finish_notification = None
     self.timer_finished = False
     self.worker = None
+    self.theme = theme or DEFAULT_THEME
 
     self.set_default_size(620, 360)
     self.set_size_request(360, 320)
@@ -80,28 +95,27 @@ class MainWindow(Gtk.Window):
 
   def _apply_styles(self):
     provider = Gtk.CssProvider()
-    provider.load_from_data(
-      b"""
-      window {
-        background: #f4f7fb;
-      }
+    css = f"""
+      window {{
+        background: {self.theme['window_bg']};
+      }}
 
-      label.countdown-label {
-        color: #1f2937;
+      label.countdown-label {{
+        color: {self.theme['label_fg']};
         font-size: 40px;
         font-weight: 700;
-      }
+      }}
 
-      button {
-        background: #ffffff;
-        color: #1f2937;
-        border-color: #cbd5e1;
+      button {{
+        background: {self.theme['button_bg']};
+        color: {self.theme['button_fg']};
+        border-color: {self.theme['button_border']};
         border-radius: 10px;
         font-weight: 700;
         padding: 8px 14px;
-      }
+      }}
       """
-    )
+    provider.load_from_data(css.encode("utf-8"))
 
     screen = self.get_screen() or Gdk.Screen.get_default()
     if screen is None:
@@ -118,12 +132,12 @@ class MainWindow(Gtk.Window):
     danger_seconds = min(10.0, max(2.0, self.total_seconds * 0.03))
 
     if time_left <= danger_seconds:
-      return (0.89, 0.20, 0.20)
+      return self.theme["progress_danger"]
 
     if time_left <= warning_seconds:
-      return (0.93, 0.55, 0.13)
+      return self.theme["progress_warning"]
 
-    return (0.10, 0.56, 0.95)
+    return self.theme["progress_normal"]
 
   def _draw_circle(self, widget, cr):
     width = widget.get_allocated_width()
@@ -134,12 +148,14 @@ class MainWindow(Gtk.Window):
     thickness = 14
     radius = max(12, (min(width, height) / 2) - thickness - 4)
 
-    cr.set_source_rgb(1.0, 1.0, 1.0)
+    circle_red, circle_green, circle_blue = self.theme["circle_bg"]
+    cr.set_source_rgb(circle_red, circle_green, circle_blue)
     cr.arc(center_x, center_y, radius + 4, 0, 2 * math.pi)
     cr.fill()
 
     cr.set_line_width(thickness)
-    cr.set_source_rgb(0.84, 0.88, 0.93)
+    ring_red, ring_green, ring_blue = self.theme["ring_bg"]
+    cr.set_source_rgb(ring_red, ring_green, ring_blue)
     cr.arc(center_x, center_y, radius, 0, 2 * math.pi)
     cr.stroke()
 
@@ -291,9 +307,16 @@ class MainWindow(Gtk.Window):
     Gtk.main_quit()
 
 
-def run_app(duration_seconds, audio_dir, sound_path=None, volume=1.0, silent=False):
+def run_app(duration_seconds, audio_dir, sound_path=None, volume=1.0, silent=False, theme=None):
   Notify.init("Quick Timer")
-  window = MainWindow(duration_seconds, audio_dir, sound_path=sound_path, volume=volume, silent=silent)
+  window = MainWindow(
+    duration_seconds,
+    audio_dir,
+    sound_path=sound_path,
+    volume=volume,
+    silent=silent,
+    theme=theme,
+  )
   window.connect("delete-event", Gtk.main_quit)
   window.initial_show()
   Gtk.main()
