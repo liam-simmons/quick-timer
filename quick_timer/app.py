@@ -8,15 +8,18 @@ gi.require_version("Notify", "0.7")
 gi.require_foreign("cairo")
 from gi.repository import Gdk, Gtk, Notify
 
-from .audio import play_random_alarm, stop_alarm
+from .audio import AlarmStatus, play_alarm, stop_alarm
 from .time_utils import format_remaining_time
 from .worker import WorkerThread
 
 
 class MainWindow(Gtk.Window):
-  def __init__(self, duration_seconds, audio_dir):
+  def __init__(self, duration_seconds, audio_dir, sound_path=None, volume=1.0, silent=False):
     super().__init__(title="Quick Timer")
     self.audio_dir = audio_dir
+    self.sound_path = sound_path
+    self.volume = volume
+    self.silent = silent
     self.total_seconds = max(float(duration_seconds), 0.001)
     self.progress_fraction = 1.0
     self.finish_notification = None
@@ -141,9 +144,8 @@ class MainWindow(Gtk.Window):
     self.close_button.show()
     self.pause_button.hide()
 
-  def show_finish_notification(self):
+  def show_finish_notification(self, message="The countdown is complete."):
     title = "Timer Finished"
-    message = "The countdown is complete."
 
     if self.finish_notification is None:
       self.finish_notification = Notify.Notification.new(title, message)
@@ -183,8 +185,22 @@ class MainWindow(Gtk.Window):
 
   def on_timer_finished(self):
     self.show_finish_controls()
-    play_random_alarm(self.audio_dir)
-    self.show_finish_notification()
+    alarm_status = play_alarm(
+      self.audio_dir,
+      sound_path=self.sound_path,
+      volume=self.volume,
+      silent=self.silent,
+    )
+    message = "The countdown is complete."
+
+    if alarm_status == AlarmStatus.FALLBACK:
+      message = "The countdown is complete. No alarm file could be used, so a fallback tone was played."
+    elif alarm_status == AlarmStatus.NONE:
+      message = "The countdown is complete, but no alarm sound could be played."
+    elif alarm_status == AlarmStatus.SILENT:
+      message = "The countdown is complete."
+
+    self.show_finish_notification(message)
     self.focus_window()
     return False
 
@@ -230,9 +246,9 @@ class MainWindow(Gtk.Window):
     Gtk.main_quit()
 
 
-def run_app(duration_seconds, audio_dir):
+def run_app(duration_seconds, audio_dir, sound_path=None, volume=1.0, silent=False):
   Notify.init("Quick Timer")
-  window = MainWindow(duration_seconds, audio_dir)
+  window = MainWindow(duration_seconds, audio_dir, sound_path=sound_path, volume=volume, silent=silent)
   window.connect("delete-event", Gtk.main_quit)
   window.initial_show()
   Gtk.main()
