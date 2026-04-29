@@ -8,22 +8,27 @@ gi.require_version("Notify", "0.7")
 gi.require_foreign("cairo")
 from gi.repository import Gdk, Gtk, Notify
 
-from .audio import play_random_alarm, stop_alarm
+from .audio import AlarmStatus, play_alarm, stop_alarm
 from .time_utils import format_remaining_time
 from .worker import WorkerThread
 
 
 class MainWindow(Gtk.Window):
-  def __init__(self, duration_seconds, audio_dir):
-    super().__init__(title="Quick Timer")
+  def __init__(self, duration_seconds, audio_dir, sound_path=None, volume=1.0, silent=False):
+    super().__init__(title="ChronoForge")
     self.audio_dir = audio_dir
+    self.sound_path = sound_path
+    self.volume = volume
+    self.silent = silent
     self.total_seconds = max(float(duration_seconds), 0.001)
     self.progress_fraction = 1.0
     self.finish_notification = None
     self.timer_finished = False
+    self.worker = None
 
     self.set_default_size(620, 360)
-    self.set_resizable(False)
+    self.set_size_request(360, 320)
+    self.set_resizable(True)
     self.set_border_width(24)
     self._apply_styles()
 
@@ -31,6 +36,8 @@ class MainWindow(Gtk.Window):
     self.add(self.box)
 
     self.circle_overlay = Gtk.Overlay()
+    self.circle_overlay.set_hexpand(True)
+    self.circle_overlay.set_vexpand(True)
     self.box.add(self.circle_overlay)
 
     self.circle_area = Gtk.DrawingArea()
@@ -52,7 +59,11 @@ class MainWindow(Gtk.Window):
     self.pause_button.connect("clicked", self.pause_clicked)
     self.controls_box.add(self.pause_button)
 
-    self.mute_button = Gtk.Button(label="Shut up")
+    self.restart_button = Gtk.Button(label="Restart")
+    self.restart_button.connect("clicked", self.restart_clicked)
+    self.controls_box.add(self.restart_button)
+
+    self.mute_button = Gtk.Button(label="Stop sound")
     self.mute_button.connect("clicked", self.button_clicked)
     self.controls_box.add(self.mute_button)
 
@@ -65,8 +76,7 @@ class MainWindow(Gtk.Window):
     self.connect("focus-in-event", self.on_focus_in)
     self.connect("window-state-event", self.on_window_state_event)
 
-    self.worker = WorkerThread(self, duration_seconds)
-    self.worker.start()
+    self.start_worker()
 
   def _apply_styles(self):
     provider = Gtk.CssProvider()
@@ -103,6 +113,18 @@ class MainWindow(Gtk.Window):
       Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
     )
 
+  def _progress_color(self, time_left):
+    warning_seconds = min(60.0, max(5.0, self.total_seconds * 0.10))
+    danger_seconds = min(10.0, max(2.0, self.total_seconds * 0.03))
+
+    if time_left <= danger_seconds:
+      return (0.89, 0.20, 0.20)
+
+    if time_left <= warning_seconds:
+      return (0.93, 0.55, 0.13)
+
+    return (0.10, 0.56, 0.95)
+
   def _draw_circle(self, widget, cr):
     width = widget.get_allocated_width()
     height = widget.get_allocated_height()
@@ -110,7 +132,7 @@ class MainWindow(Gtk.Window):
     center_x = width / 2
     center_y = height / 2
     thickness = 14
-    radius = (min(width, height) / 2) - thickness - 4
+    radius = max(12, (min(width, height) / 2) - thickness - 4)
 
     cr.set_source_rgb(1.0, 1.0, 1.0)
     cr.arc(center_x, center_y, radius + 4, 0, 2 * math.pi)
@@ -124,11 +146,16 @@ class MainWindow(Gtk.Window):
     if self.progress_fraction > 0:
       start_angle = -math.pi / 2
       end_angle = start_angle + (2 * math.pi * self.progress_fraction)
-      cr.set_source_rgb(0.10, 0.56, 0.95)
+      red, green, blue = self._progress_color(self.worker.get_time_left())
+      cr.set_source_rgb(red, green, blue)
       cr.arc(center_x, center_y, radius, start_angle, end_angle)
       cr.stroke()
 
     return False
+
+  def start_worker(self):
+    self.worker = WorkerThread(self, self.total_seconds)
+    self.worker.start()
 
   def initial_show(self):
     self.show_all()
@@ -141,9 +168,15 @@ class MainWindow(Gtk.Window):
     self.close_button.show()
     self.pause_button.hide()
 
-  def show_finish_notification(self):
+  def show_running_controls(self):
+    self.timer_finished = False
+    self.pause_button.show()
+    self.pause_button.set_label("Pause")
+    self.mute_button.hide()
+    self.close_button.hide()
+
+  def show_finish_notification(self, message="The countdown is complete."):
     title = "Timer Finished"
-    message = "The countdown is complete."
 
     if self.finish_notification is None:
       self.finish_notification = Notify.Notification.new(title, message)
@@ -170,6 +203,19 @@ class MainWindow(Gtk.Window):
   def close_clicked(self, widget):
     self.close()
 
+  def restart_clicked(self, widget):
+    stop_alarm()
+    self.clear_finish_notification()
+
+    if self.worker is not None:
+      self.worker.done = True
+
+    self.progress_fraction = 1.0
+    self.count_down_label.set_text(format_remaining_time(self.total_seconds))
+    self.show_running_controls()
+    self.start_worker()
+    self.circle_area.queue_draw()
+
   def focus_window(self):
     self.deiconify()
     self.present_with_time(Gdk.CURRENT_TIME)
@@ -183,8 +229,22 @@ class MainWindow(Gtk.Window):
 
   def on_timer_finished(self):
     self.show_finish_controls()
-    play_random_alarm(self.audio_dir)
-    self.show_finish_notification()
+    alarm_status = play_alarm(
+      self.audio_dir,
+      sound_path=self.sound_path,
+      volume=self.volume,
+      silent=self.silent,
+    )
+    message = "The countdown is complete."
+
+    if alarm_status == AlarmStatus.FALLBACK:
+      message = "The countdown is complete. No alarm file could be used, so a fallback tone was played."
+    elif alarm_status == AlarmStatus.NONE:
+      message = "The countdown is complete, but no alarm sound could be played."
+    elif alarm_status == AlarmStatus.SILENT:
+      message = "The countdown is complete."
+
+    self.show_finish_notification(message)
     self.focus_window()
     return False
 
@@ -224,15 +284,16 @@ class MainWindow(Gtk.Window):
     return False
 
   def on_quit(self, widget):
-    self.worker.done = True
+    if self.worker is not None:
+      self.worker.done = True
     self.clear_finish_notification()
     Notify.uninit()
     Gtk.main_quit()
 
 
-def run_app(duration_seconds, audio_dir):
-  Notify.init("Quick Timer")
-  window = MainWindow(duration_seconds, audio_dir)
+def run_app(duration_seconds, audio_dir, sound_path=None, volume=1.0, silent=False):
+  Notify.init("ChronoForge")
+  window = MainWindow(duration_seconds, audio_dir, sound_path=sound_path, volume=volume, silent=silent)
   window.connect("delete-event", Gtk.main_quit)
   window.initial_show()
   Gtk.main()

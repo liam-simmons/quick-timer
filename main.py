@@ -7,7 +7,26 @@ from quick_timer.time_utils import parse_duration
 def _parse_args(argv):
   parser = argparse.ArgumentParser(description="Quick Timer")
   parser.add_argument("duration", help="Duration like 2m, 45s, 1h30m, or 500 (milliseconds)")
+  parser.add_argument(
+    "--sound",
+    help="Alarm sound file to play. Relative paths are checked from the current directory and audio/.",
+  )
+  parser.add_argument(
+    "--volume",
+    type=float,
+    default=1.0,
+    help="Alarm volume from 0.0 to 1.0.",
+  )
+  parser.add_argument(
+    "--silent",
+    action="store_true",
+    help="Show the finished notification without playing an alarm sound.",
+  )
   return parser.parse_args(argv)
+
+
+def _clamp_volume(volume):
+  return min(1.0, max(0.0, volume))
 
 
 def main(argv=None):
@@ -32,7 +51,13 @@ def main(argv=None):
     return 1
 
   audio_dir = Path(__file__).resolve().parent / "audio"
-  run_app(duration_seconds, audio_dir)
+  run_app(
+    duration_seconds,
+    audio_dir,
+    sound_path=args.sound,
+    volume=_clamp_volume(args.volume),
+    silent=args.silent,
+  )
   return 0
 
 
