@@ -1,66 +1,40 @@
-from math import floor
-import gi
-gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk
-import time
-import pygame
+import argparse
+from pathlib import Path
 import sys
+from quick_timer.time_utils import parse_duration
 
-from countdown_thread import WorkerThread
-import helpers
 
-start_time = time.time()
-count_down = helpers.parse_countdown_entry(sys.argv[1])
-end_time = start_time + count_down
+def _parse_args(argv):
+  parser = argparse.ArgumentParser(description="Quick Timer")
+  parser.add_argument("duration", help="Duration like 2m, 45s, 1h30m, or 500 (milliseconds)")
+  return parser.parse_args(argv)
 
-pygame.mixer.init()
 
-class MainWindow(Gtk.Window):
+def main(argv=None):
+  args = _parse_args(argv if argv is not None else sys.argv[1:])
 
-  def __init__(self):
-    Gtk.Window.__init__(self, title="Quick Timer")
+  try:
+    duration_seconds = parse_duration(args.duration)
+  except ValueError as error:
+    print(f"Error: {error}", file=sys.stderr)
+    return 2
 
-    self.set_border_width(20)
+  try:
+    import pygame
+    from quick_timer.app import run_app
 
-    self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
-    self.add(self.box)
-  
-    self.count_down_label = Gtk.Label(str(count_down))
-    self.box.add(self.count_down_label)
+    pygame.mixer.init()
+  except ImportError as error:
+    print(f"Error importing runtime dependencies: {error}", file=sys.stderr)
+    return 1
+  except pygame.error as error:
+    print(f"Error initializing audio: {error}", file=sys.stderr)
+    return 1
 
-    self.button = Gtk.Button(label="Shut up")
-    self.button.connect("clicked", self.button_clicked)
-    self.box.add(self.button)
+  audio_dir = Path(__file__).resolve().parent / "audio"
+  run_app(duration_seconds, audio_dir)
+  return 0
 
-    # Connect the destroy event so that we can set the done flag and
-    # terminate the worker cleanly.
-    self.connect("destroy", self.on_quit)
 
-    # Kick off the background thread.
-    self.worker = WorkerThread(self)
-    self.worker.start()
-
-  def initial_show(self):
-    window.show_all()
-    self.button.hide()
-
-  def show_button(self):
-    self.button.show()
-  
-  def button_clicked(self, widget):
-    helpers.stop_noise()
-
-  def update_progress(self):
-    self.count_down_label.set_text(self.worker.count_down)
-
-    return False
-
-  def on_quit(self, widget):
-        self.worker.done = True
-        Gtk.main_quit()
-
-if __name__ == '__main__':
-  window = MainWindow()
-  window.connect('delete-event', Gtk.main_quit)
-  window.initial_show()
-  Gtk.main()
+if __name__ == "__main__":
+  raise SystemExit(main())
